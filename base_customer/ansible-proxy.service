@@ -1,0 +1,12 @@
+[Unit]
+Description=Ansible Proxy
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=root
+ExecStart=ssh -o "StrictHostKeyChecking=no" -o "ControlMaster=auto" -o "ControlPersist=no" -o "ControlPath=~/.ssh/cp/ssh-ANSIBLE" -CN -D 0.0.0.0:4321 -p 22 -i ~/.ssh/id_rsa root@127.0.0.1
+ExecStop=ssh -o "ControlPath=~/.ssh/cp/ssh-ANSIBLE" -O stop -p 22 root@127.0.0.1
+
+[Install]
+WantedBy=default.target

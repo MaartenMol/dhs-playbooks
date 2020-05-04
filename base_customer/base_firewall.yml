@@ -1,0 +1,22 @@
+---
+- name: Setup Windows Firewall
+  hosts: windowsservers
+  gather_facts: no
+  tasks:
+    - name: Firewall rule to allow RDP on TCP port 3389
+      win_firewall_rule:
+        name: Remote Desktop
+        localport: 3389
+        action: allow
+        direction: in
+        protocol: tcp
+        state: present
+        enabled: yes
+    - name: Firewall rule to allow ICMP v4 (ping)
+      win_firewall_rule:
+        name: ICMP Allow incoming V4 echo request
+        enabled: yes
+        state: present
+        action: allow
+        direction: in
+        protocol: icmpv4

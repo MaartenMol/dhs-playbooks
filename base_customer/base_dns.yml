@@ -1,0 +1,27 @@
+- name: Provision DNS
+  hosts: domaincontrollers
+  gather_facts: yes
+  tasks:
+    - name: RECORD A DHS.nl
+      win_dns_record:
+        name: "dhs.nl"
+        type: "A"
+        value: "213.249.93.117"
+        zone: "{{ customer_domain }}"
+    - name: Inject DNS CORE IP
+      win_shell: "Add-DnsServerForwarder -IPAddress 172.27.72.4 -WarningAction SilentlyContinue"
+
+- name: Provision DNS-SLAVE
+  hosts: slavedomaincontrollers
+  gather_facts: yes
+  tasks:
+    - name: Inject DNS CORE IP
+      win_shell: "Add-DnsServerForwarder -IPAddress 172.27.72.4 -WarningAction SilentlyContinue"
+
+- name: Settle DNS Provisioning
+  hosts: domaincontrollers
+  gather_facts: yes
+  tasks:
+    - name: Let the DNS Config settle before continue
+      pause:
+        minutes: 5

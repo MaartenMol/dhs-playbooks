@@ -1,0 +1,178 @@
+---
+- name: Manage DNS settings
+  hosts: windowsservers
+  gather_facts: yes
+  tasks:
+    - name: Set multiple lookup addresses on Ethernet0
+      when: ansible_facts['os_family'] == "Windows"
+      win_dns_client:
+        adapter_names: 'Ethernet0'
+        ipv4_addresses:
+          - "{{ dns_server_1 }}"
+          - "{{ dns_server_2 }}"
+
+- name: Deploy an Active Directory
+  hosts: domaincontrollers
+  gather_facts: yes
+  tasks:
+    - name: Create new Windows domain in a new forest
+      win_domain:
+        dns_domain_name: "{{ customer_domain }}"
+        safe_mode_password: "{{ dhs_ad_safe_password }}"
+      register: domain_install
+    - name: Reboot when AD feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: domain_install.reboot_required
+    - name: Let the AD settle before continue
+      pause:
+        minutes: 5
+
+- name: Provision the Active Directory
+  hosts: domaincontrollers
+  gather_facts: yes
+  tasks:  
+    - name: Create linux-logon group
+      win_domain_group:
+        name: linux-logon
+        scope: global
+    - name: Create linux-sudo group
+      win_domain_group:
+        name: linux-sudo
+        scope: global
+    - name: Create user MMOL
+      win_domain_user:
+        name: mmol
+        firstname: Maarten
+        surname: Mol
+        company: "{{ customer_name }}"
+        password: P@ssword
+        state: present
+        groups:
+          - Domain Users
+          - Domain Admins
+          - linux-logon
+          - linux-sudo
+        street: Zaltbommelseweg 107
+        city: Oss
+        state_province: NB
+        postal_code: 5341PC
+        country: NL
+        attributes:
+          telephoneNumber: 0612345678
+
+- name: Deploy a Slave Domain Controller
+  hosts: slavedomaincontrollers
+  gather_facts: yes
+  tasks:
+    - name: Add Domain Controller to domain
+      win_domain_controller:
+        dns_domain_name: "{{ customer_domain }}"
+        domain_admin_user: "{{dhs_ad_admin_user}}@{{ customer_domain }}"
+        domain_admin_password: "{{ dhs_ad_admin_password }}"
+        safe_mode_password: "{{ dhs_ad_safe_password }}"
+        state: domain_controller
+      register: domain_install
+    - name: Reboot when AD feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: domain_install.reboot_required
+
+- name: Manage Windows computer membership for AD
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Let the AD settle before continue
+      pause:
+        minutes: 2
+    - name: Set multiple lookup addresses on Ethernet0
+      when: ansible_facts['os_family'] == "Windows"
+      win_dns_client:
+        adapter_names: 'Ethernet0'
+        ipv4_addresses:
+          - "{{ dns_server_1 }}"
+          - "{{ dns_server_2 }}"
+    - name: Add computer to AD
+      when: ansible_facts['os_family'] == "Windows"
+      win_domain_membership:
+        dns_domain_name: "{{ customer_domain }}"
+        domain_admin_user: "{{dhs_ad_admin_user}}@{{ customer_domain }}"
+        domain_admin_password: "{{ dhs_ad_admin_password }}"
+        state: domain
+      register: domain_state
+    - name: Reboot when AD membership requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: ansible_facts['os_family'] == "Windows" and domain_state.reboot_required
+    
+- name: Manage Linux computer membership for AD
+  hosts: linuxservers
+  gather_facts: yes
+  become: yes
+  become_method: sudo
+  tasks:
+    - name: Install ad_auth required tools
+      when: ansible_facts['os_family'] == "RedHat"
+      dnf:
+        name:
+          - realmd 
+          - sssd 
+          - oddjob 
+          - oddjob-mkhomedir 
+          - adcli 
+          - samba-common 
+          - samba-common-tools 
+          - krb5-workstation
+        state: latest
+    - name: Install pexpect using pip
+      when: ansible_facts['os_family'] == "RedHat"
+      pip:
+        state: latest
+        name:
+          - pexpect
+    - name: Check if machine is bound
+      when: ansible_facts['os_family'] == "RedHat"
+      shell: realm list
+      register: realmd_bound
+      changed_when: false
+      ignore_errors: true
+
+    - name: Set DNS Nameservers
+      command: /bin/bash -c "nmcli con mod ens160 ipv4.dns '{{ dns_server_1 }} {{ dns_server_2 }}'"
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+    - name: Set DNS Search Domain
+      command: /bin/bash -c "nmcli con mod ens160 ipv4.dns-search '{{ customer_domain|upper }}'"
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+    - name: Enable and Restart NetworkManager
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+      systemd:
+        name: NetworkManager
+        enabled: yes
+        state: restarted
+    - name: Join system to AD and put the computer object in the Computer OU
+      expect:
+        command: /bin/bash -c "/usr/sbin/realm join --user={{dhs_ad_admin_user}}@{{ customer_domain|upper }} {{ customer_domain|upper }}"
+        responses:
+          Password*: "{{ dhs_ad_admin_password }}"
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+    - name: Add default_domain_suffix to sssd.conf
+      lineinfile: 
+        dest: /etc/sssd/sssd.conf
+        line: 'default_domain_suffix = {{ customer_domain|upper }}'
+        insertafter: '^\[sssd\]'
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+    - name: Restrict access based on specific ad group
+      command: /bin/bash -c "/usr/sbin/realm permit -g linux-logon@{{ customer_domain|upper }}"
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+    - name: Add ad group to sudoers
+      lineinfile:
+        dest: /etc/sudoers
+        line: '%linux-sudo@{{ customer_domain|upper }}        ALL=(ALL)       ALL'
+        insertafter: '^%wheel'
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+    - name: Enable and Restart SSSD
+      when: ansible_facts['os_family'] == "RedHat" and realmd_bound.stdout == ""
+      systemd:
+        name: sssd
+        enabled: yes
+        state: restarted

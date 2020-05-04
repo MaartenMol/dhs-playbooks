@@ -1,0 +1,13 @@
+- name: Build Templates
+  hosts: ANSIBLE-AWX
+  tasks:
+  - name: Pull Builder Image
+    docker_image:
+      name: maartenmol/dhs-packer
+      source: pull
+  - name: Build Windows Server 2019 CORE
+    docker_container:
+      name: build-windows-server-2019-core
+      auto_remove: "{{ removeAutomatic }}"
+      image: maartenmol/dhs-packer
+      command: ["packer build -force -var 'vcenter_pass=VD!fli9ht' -var-file 'vars_vcenter.json' Windows_Server_2019_Core.json"]

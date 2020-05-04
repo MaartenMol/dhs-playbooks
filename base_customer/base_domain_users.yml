@@ -1,0 +1,25 @@
+---
+- name: Manage AD Users
+  hosts: domaincontrollers
+  gather_facts: yes
+  tasks:
+    - name: Create directory structure for AD Scripts
+      when: create_ad_users == 'Yes'
+      win_file:
+        path: C:\nextBeheer\scripts\ADUsers
+        state: directory
+    - name: Download AD Users script
+      when: create_ad_users == 'Yes'
+      win_get_url:
+        url: http://nexus.dhsnext.nl/repository/raw-dhs/add_users.ps1
+        dest: C:\nextBeheer\scripts\ADUsers\add_users.ps1
+    - name: Download AD Users CSV
+      when: create_ad_users == 'Yes'
+      win_get_url:
+        url: "{{ create_ad_users_url }}"
+        dest: C:\nextBeheer\scripts\ADUsers\users.csv
+    - name: Run AD Users Script
+      when: create_ad_users == 'Yes'
+      win_shell: C:\nextBeheer\scripts\ADUsers\add_users.ps1 -DomainName "{{ customer_domain }}" -DataPath C:\nextBeheer\scripts\ADUsers\users.csv
+      register: script_result
+      failed_when: '"SCRIPT: DONE!" not in script_result.stdout'

@@ -1,0 +1,77 @@
+---
+- name: Setup File Servers
+  hosts: fileservers
+  gather_facts: yes
+  tasks:
+    - name: Add 2TB Disk to VM
+      vmware_guest_disk:
+        hostname: "{{ dhs_vmware_host }}"
+        username: "{{ dhs_vmware_user }}"
+        password: "{{ dhs_vmware_password }}"
+        validate_certs: "{{ dhs_vmware_validate_certs }}"
+        datacenter: "{{ dhs_vmware_datacenter }}"
+        folder: "/Klanten/{{ customer_name }}"
+        name: "{{ inventory_hostname }}.{{ customer_domain }}"
+        disk:
+          - size_tb: 2
+            type: thin
+            state: present
+            autoselect_datastore: True
+            scsi_controller: 1
+            scsi_type: 'paravirtual'
+            unit_number: 10
+      delegate_to: localhost
+    - name: Init new disk for GPT use
+      # Powershell solution used due to missing win_initialize_disk in Ansible 2.9
+      # Will be added in 2.10: https://awsbloglink.wordpress.com/2019/09/11/ansible-2-10-new-module-list/
+      # https://github.com/ansible/ansible/pull/58617
+      win_shell: Get-Disk | Where partitionstyle -eq raw | Initialize-Disk -PartitionStyle GPT
+    - name: Create a volume with drive letter Z and maximum size
+      ignore_errors: yes # When the drive was already added it thinks you want to extend/shrink it
+      win_partition:
+        drive_letter: Z
+        partition_size: -1
+        disk_number: 1
+    - name: Format volume Z for NTFS use with DATA label 
+      ignore_errors: yes # When the drive was already formatted it still gives an error while force is FALSE
+      win_format:
+        force: no
+        drive_letter: Z
+        file_system: NTFS
+        new_label: DATA
+        full: False
+    - name: Install File Services with sub features and management tools
+      win_feature:
+        name: FileAndStorage-Services
+        state: present
+        include_sub_features: yes
+        include_management_tools: yes
+      register: win_feature
+    - name: Reboot if installing File Services feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: win_feature.reboot_required
+    - name: Create directory structure for Internal share
+      win_file:
+        path: Z:\shares\secret\internal
+        state: directory
+    - name: Create directory structure for Company share
+      win_file:
+        path: Z:\shares\company
+        state: directory
+    - name: Add secret share
+      win_share:
+        name: internal
+        description: top secret share
+        path: Z:\shares\secret\internal
+        list: no
+        full: Domain Admins
+        deny: Domain Users
+    - name: Add public company share
+      win_share:
+        name: company
+        description: company share
+        path: Z:\shares\company
+        list: yes
+        full: Domain Admins
+        read: Domain Users

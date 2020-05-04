@@ -1,0 +1,11 @@
+---
+- name: Notify
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Send a Telegram message
+      telegram:
+        token: '992106105:AAGdtks_CuonNG_LwVKWJ8TF7Iy9W9A0GBI'
+        chat_id: '-343904378'
+        msg_format: html
+        msg: "<u><b>{{ customer_name }}</b></u> \n{{ telegram_message }}"

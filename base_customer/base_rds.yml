@@ -1,0 +1,204 @@
+---
+- name: Setup RDS Infra Servers
+  hosts: rdsinfra
+  gather_facts: yes
+  tasks:
+    - name: Install Connection Broker with sub features and management tools
+      win_feature:
+        name: RDS-Connection-Broker
+        state: present
+        include_sub_features: yes
+        include_management_tools: yes
+      register: win_feature
+    - name: Reboot if installing Connection Broker feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: win_feature.reboot_required
+    - name: Install RDS Gateway with sub features and management tools
+      win_feature:
+        name: RDS-Gateway
+        state: present
+        include_sub_features: yes
+        include_management_tools: yes
+      register: win_feature
+    - name: Reboot if installing RDS Gateway feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: win_feature.reboot_required
+    - name: Install RDS Licensing with sub features and management tools
+      win_feature:
+        name: RDS-Licensing
+        state: present
+        include_sub_features: yes
+        include_management_tools: yes
+      register: win_feature
+    - name: Reboot if installing RDS Licensing feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: win_feature.reboot_required
+    - name: Install RDS Web-Access with sub features and management tools
+      win_feature:
+        name: RDS-Web-Access
+        state: present
+        include_sub_features: yes
+        include_management_tools: yes
+      register: win_feature
+    - name: Reboot if installing RDS Web-Access feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: win_feature.reboot_required
+
+- name: Setup RDS Session Servers
+  hosts: rdssessions
+  gather_facts: yes
+  tasks:
+    - name: Install RDS RD-Server with sub features and management tools
+      win_feature:
+        name: RDS-RD-Server
+        state: present
+        include_sub_features: yes
+        include_management_tools: yes
+      register: win_feature
+    - name: Reboot if installing RDS RD-Server feature requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: win_feature.reboot_required
+
+- name: Configure RDS Infrastructure
+  hosts: rdsinfra
+  gather_facts: yes
+  tasks:
+    - name: Let servers settle before continue
+      pause:
+        minutes: 5
+    - name: Gather RDS Deployment Model
+      register: rds_init
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: (Get-RDserver -Role "RDS-CONNECTION-BROKER" | ft -HideTableHeaders | Out-String) -Match "RDS-01.{{ customer_domain }}"
+    - name: Create new RDS Deployment Model
+      when: rds_init.stdout_lines[0] == 'False'
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: "New-RDSessionDeployment -ConnectionBroker RDS-01.{{ customer_domain }} -WebAccessServer RDS-01.{{ customer_domain }} -SessionHost RDS-02.{{ customer_domain }}"
+    - name: Gather RDS-LICENSE Deployment State
+      register: rdsl_init
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: (Get-RDserver -Role "RDS-LICENSING" | ft -HideTableHeaders | Out-String) -Match "RDS-01.{{ customer_domain }}"
+    - name: Add RDS-LICENSE to RDS Deployment model
+      when: rdsl_init.stdout_lines[0] == 'False'
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: "Add-RDServer -Server RDS-01.{{ customer_domain }} -Role RDS-LICENSING -ConnectionBroker RDS-01.{{ customer_domain }}"
+    - name: Gather RDS-GATEWAY Deployment State
+      register: rdsg_init
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: (Get-RDserver -Role "RDS-GATEWAY" | ft -HideTableHeaders | Out-String) -Match "RDS-01.{{ customer_domain }}"
+    - name: Add RDS-GATEWAY to RDS Deployment model
+      when: rdsg_init.stdout_lines[0] == 'False'
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: "Add-RDServer -Server RDS-01.{{ customer_domain }} -Role RDS-GATEWAY -ConnectionBroker RDS-01.{{ customer_domain }} -GatewayExternalFqdn gateway.{{ customer_domain }}"
+    - name: Gather RDS-LICENSE Config State
+      register: rdslc_init
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: (Get-RDLicenseConfiguration | ft -HideTableHeaders | Out-String) -Match "RDS-01.{{ customer_domain }}" -And "PerUser"
+    - name: Create RDS-LICENSE Config State
+      when: rdslc_init.stdout_lines[0] == 'False'
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: "Set-RDLicenseConfiguration -LicenseServer RDS-01.{{ customer_domain }} -Mode PerUser -ConnectionBroker RDS-01.{{ customer_domain }} -Force"
+
+- name: Provision RDS Session Hosts
+  hosts: rdssessions
+  gather_facts: yes
+  tasks:
+    - name: Install multiple Windows packages
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey:
+        name:
+        - vscode
+        state: present
+
+- name: Configure RDS Sessions Config
+  hosts: rdsinfra
+  gather_facts: yes
+  tasks:
+    - name: Let servers settle before continue
+      pause:
+        minutes: 5
+    - name: Gather RDS Sessions Config
+      register: rdssc_init
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: (Get-RDSessionCollection | ft -HideTableHeaders | Out-String) -Match "SessionCollection"
+    - name: Create new RDS Sessions Config
+      when: rdssc_init.stdout_lines[0] == 'False'
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: New-RDSessionCollection -CollectionName SessionCollection -SessionHost RDS-02."{{ customer_domain }}" -CollectionDescription "This Collection is for Desktop Sessions" -ConnectionBroker RDS-01."{{ customer_domain }}"
+    - name: Gather App Config for WORDPAD
+      register: appWordpad
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: (Get-RDRemoteApp -CollectionName SessionCollection -Alias Wordpad | ft -HideTableHeaders | Out-String) -Match "True"
+    - name: Create App Config for WORDPAD
+      when: appWordpad.stdout_lines[0] == 'False'
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: New-RDRemoteapp -Alias Wordpad -DisplayName WordPad -FilePath "C:\Program Files\Windows NT\Accessories\wordpad.exe" -ShowInWebAccess 1 -CollectionName "SessionCollection" -ConnectionBroker RDS-01."{{ customer_domain }}"
+    - name: Gather App Config for VSCODE
+      register: appVSCode
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: (Get-RDRemoteApp -CollectionName SessionCollection -Alias VSCode | ft -HideTableHeaders | Out-String) -Match "True"
+    - name: Create App Config for VSCODE
+      when: appVSCode.stdout_lines[0] == 'False'
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: New-RDRemoteapp -Alias VSCode -DisplayName VSCode -FilePath "C:\Program Files\Microsoft VS Code\Code.exe" -ShowInWebAccess 1 -CollectionName "SessionCollection" -ConnectionBroker RDS-01."{{ customer_domain }}"

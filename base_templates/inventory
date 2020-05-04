@@ -1,0 +1,1 @@
+ANSIBLE-AWX ansible_connection='ssh' ansible_python_interpreter='auto' ansible_host='172.27.72.60'

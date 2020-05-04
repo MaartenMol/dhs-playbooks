@@ -1,0 +1,39 @@
+---
+- name: Install the Management Gateway
+  hosts: managementgw
+  gather_facts: yes
+  tasks:
+    - name: Install multiple Windows packages
+      when: ansible_facts['os_family'] == "Windows"
+      ignore_errors: yes
+      win_chocolatey:
+        name: windows-admin-center
+        params: /Port:443
+        state: present
+- name: Provision the Management Gateway
+  hosts: managementgw
+  gather_facts: no
+  tasks:
+    - name: Firewall rule to allow HTTPS on TCP port 443
+      win_firewall_rule:
+        name: Windows Admin Center
+        localport: 443
+        action: allow
+        direction: in
+        protocol: tcp
+        state: present
+        enabled: yes
+    - name: Let WAC settle before continue
+      pause:
+        minutes: 5
+    - name: Install WAC Plugins using Powershell
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+      win_shell: |
+        Import-Module "$env:ProgramFiles\windows admin center\PowerShell\Modules\ExtensionTools"
+        Install-Extension -GatewayEndpoint "https://localhost" "msft.sme.active-directory"
+        Install-Extension -GatewayEndpoint "https://localhost" "msft.sme.dhcp"
+        Install-Extension -GatewayEndpoint "https://localhost" "msft.sme.dns"

@@ -1,0 +1,31 @@
+---
+- name: Prepare Web Servers
+  hosts: webservers
+  gather_facts: no
+  tasks:
+    - name: Install required DNF packages
+      dnf:
+        name:
+          - nginx
+          - php
+        state: latest
+    - name: Create PHPInfo File
+      lineinfile:
+        path: /usr/share/nginx/html/index.php
+        line: <?php phpinfo(); ?>
+        create: yes
+    - name: Start & Enable NGINX
+      systemd:
+        name: nginx
+        enabled: yes
+        state: started
+    - name: Enable HTTP Firewall rule
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+    - name: Restart & Enable FirewallD
+      systemd:
+        name: firewalld
+        enabled: yes
+        state: restarted

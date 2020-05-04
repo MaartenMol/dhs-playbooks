@@ -1,0 +1,41 @@
+---
+  # NOG NIET MOGELIJK OM HOSTS IN GROUPS TE ZETTEN, KOMT IN EEN UPDATE ZIE: https://github.com/ansible/awx/issues/5177
+- name: Manage Customers
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Create tower organization
+      tower_organization:
+        name: "{{ customer_name }}"
+        description: "{{ customer_desc }}"
+        state: present
+    - name: Add tower inventory
+      tower_inventory:
+        name: "{{ customer_name }}"
+        description: "{{ customer_desc }}"
+        organization: "{{ customer_name }}"
+        state: present
+        variables: #ansible_psrp_proxy: "socks5h://172.27.72.80:4321",
+          '{
+            organization: "{{ customer_domain }}",
+            guest_notes: "{{ customer_name }}",
+            ansible_psrp_protocol: "http",
+            ansible_vmware_guest_path: "Flightcase/vm/{{ customer_name }}/"
+          }'
+    - name: Add tower groups
+      tower_group:
+        name: "{{ item }}"
+        inventory: "{{ customer_name }}"
+      with_items: [applicationservers, bastions, domaincontrollers, fileservers, linuxservers, managementgw, msdatabases, rdsinfra, rdssessions, slavedomaincontrollers, webservers, windowsservers]
+    - name: Add tower host
+      tower_host:
+        name: "dc-0{{ item }}.{{ customer_domain }}"
+        inventory: "{{ customer_name }}"
+        variables:
+          '{
+            organization: "{{ customer_domain }}",
+            guest_notes: "{{ customer_name }}",
+            ansible_psrp_protocol: "http",
+            ansible_vmware_guest_path: "Flightcase/vm/{{ customer_name }}/"
+          }'
+      with_sequence: start=1 count="{{ dc_count }}"

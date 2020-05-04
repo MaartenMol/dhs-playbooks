@@ -1,0 +1,13 @@
+- name: Build Templates
+  hosts: ANSIBLE-AWX
+  tasks:
+  - name: Pull Builder Image
+    docker_image:
+      name: maartenmol/dhs-packer
+      source: pull
+  - name: Build CentOS 8
+    docker_container:
+      name: build-centos-8
+      auto_remove: "{{ removeAutomatic }}"
+      image: maartenmol/dhs-packer
+      command: ["packer build -force -var 'vcenter_pass=VD!fli9ht' -var-file 'vars_vcenter.json' CentOS_8.json"]

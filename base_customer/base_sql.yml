@@ -1,0 +1,83 @@
+---
+- name: Deploy MSSQL2019 on Windows
+  hosts: msdatabases
+  gather_facts: yes
+  tasks:
+    - name: Mount SQL ISO from vCenter
+      vmware_guest:
+        hostname: "{{ dhs_vmware_host }}"
+        username: "{{ dhs_vmware_user }}"
+        password: "{{ dhs_vmware_password }}"
+        validate_certs: "{{ dhs_vmware_validate_certs }}"
+        datacenter: "{{ dhs_vmware_datacenter }}"
+        folder: "/Klanten/{{ customer_name }}"
+        name: "{{ inventory_hostname }}.{{ customer_domain }}"
+        cdrom:
+          type: iso
+          iso_path: "[VNX-LUN01-PROD] ISO/en_sql_server_2019_enterprise_x64_dvd_46f0ba38.iso"
+      delegate_to: localhost
+
+    - name: Install SQL 2019 Enterprise
+      register: win_feature
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ customer_domain }}\\{{ dhs_ad_admin_user }}"
+        ansible_become_password: "{{ dhs_ad_admin_password }}"
+        #ansible_become_flags: logon_type=interactive logon_flags=with_profile
+      win_package:
+        path: "D:\\setup.exe"
+        product_id: Microsoft SQL Server SQL2019
+        #- /PID="AAAAA-BBBBB-CCCCC-DDDDD-EEEEE" <- USE THIS IF LICENSE KEY IS VALID!
+        # EXTRA ARGUMENTS FOUND HERE: https://docs.microsoft.com/en-us/sql/database-engine/install-windows/install-sql-server-from-the-command-prompt?view=sql-server-ver15
+        arguments: 
+          - /Q
+          - /IACCEPTSQLSERVERLICENSETERMS
+          - /ACTION="install"
+          - /FEATURES=SQL #,AS,IS,Tools
+          - /INSTANCENAME=MSSQLSERVER
+          - /SQLSVCACCOUNT=.\administrator
+          - /SQLSVCPASSWORD=P@ssword
+          #- /ADDCURRENTUSERASSQLADMIN=True
+          - /SQLSYSADMINACCOUNTS={{ customer_domain }}\{{ dhs_ad_admin_user }}
+          # - /AGTSVCACCOUNT={{ customer_domain }}\{{ dhs_ad_admin_user }}
+          # - /AGTSVCPASSWORD="{{ dhs_ad_admin_password }}"
+          # - /ASSVCACCOUNT={{ customer_domain }}\{{ dhs_ad_admin_user }} 
+          # - /ASSVCPASSWORD="{{ dhs_ad_admin_password }}"
+          # - /ISSVCAccount={{ customer_domain }}\{{ dhs_ad_admin_user }} 
+          # - /ISSVCPASSWORD="{{ dhs_ad_admin_password }}"
+          # - /ASSYSADMINACCOUNTS={{ customer_domain }}\{{ dhs_ad_admin_user }}
+          - /UPDATEENABLED=0
+          - /TCPENABLED=1
+          - /NPENABLED=1
+    - name: Reboot if installing SQL requires it
+      win_reboot:
+        post_reboot_delay: 120
+      when: win_feature.reboot_required == true
+
+    - name: Remove SQL ISO from vCenter
+      vmware_guest:
+        hostname: "{{ dhs_vmware_host }}"
+        username: "{{ dhs_vmware_user }}"
+        password: "{{ dhs_vmware_password }}"
+        validate_certs: "{{ dhs_vmware_validate_certs }}"
+        datacenter: "{{ dhs_vmware_datacenter }}"
+        folder: "/Klanten/{{ customer_name }}"
+        name: "{{ inventory_hostname }}.{{ customer_domain }}"
+        cdrom:
+          type: iso
+          iso_path: "[VNX-LUN01-PROD] ISO/en_sql_server_2019_enterprise_x64_dvd_46f0ba38.iso"
+          state: absent
+      delegate_to: localhost
+
+    # - name: Install SQL 2019 Developer
+    #   when: ansible_facts['os_family'] == "Windows"
+    #   win_chocolatey:
+    #     name:
+    #     - sql-server-2019
+    #     state: present
+    #   register: install_response
+    # - name: Reboot if required
+    #   win_reboot:
+    #   when: install_response.changed == true and install_response.rc == 3010
+

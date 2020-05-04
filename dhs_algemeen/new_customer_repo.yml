@@ -1,0 +1,25 @@
+---
+- name: Manage Customers Repo
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Create GitLab Project in group KLANTEN
+      gitlab_project:
+        api_url: http://gitlab.dhsnext.nl
+        validate_certs: False
+        api_token: FCWymTgJhogxfisaX438
+        path: "{{ customer_name|lower }}"
+        name: "{{ customer_name }}"
+        group: klanten
+        issues_enabled: False
+        wiki_enabled: False
+        snippets_enabled: False
+        state: present
+        visibility: internal
+      delegate_to: localhost
+    - name: Send a notification
+      telegram:
+        token: '992106105:AAGdtks_CuonNG_LwVKWJ8TF7Iy9W9A0GBI'
+        chat_id: '-343904378'
+        msg_format: html
+        msg: "A new customer joined DHS, {{ customer_name }}.\nPlease provide the inventory here <a href='http://gitlab.dhsnext.nl/klanten/{{ customer_name|lower }}'>GitLab Klant</a>"

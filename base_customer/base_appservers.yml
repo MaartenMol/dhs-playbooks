@@ -1,0 +1,11 @@
+---
+- name: Deploy Appservers Applications
+  hosts: applicationservers
+  gather_facts: yes
+  tasks:
+    - name: Install multiple Windows packages
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey:
+        name:
+        - sql-server-management-studio
+        state: present

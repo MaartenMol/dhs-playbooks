@@ -1,0 +1,23 @@
+---
+- name: Manage Windows Apps
+  hosts: "{{ selected_host }}"
+  gather_facts: yes
+  tasks:
+    - name: Remove the default public source
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey_source:
+        name: chocolatey
+        state: absent
+    - name: Create HTTP source with credentials
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey_source:
+        name: DHS-CACHE
+        state: present
+        source: http://nexus.dhsnext.nl/repository/chocolatey/
+        source_username: user
+        source_password: jSamjSuqUrm5
+    - name: Install Windows packages
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey:
+        name: "{{ selected_app }}"
+        state: "{{ selected_method }}"

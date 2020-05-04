@@ -1,0 +1,46 @@
+---
+  # NOG NIET MOGELIJK OM HOSTS IN GROUPS TE ZETTEN, KOMT IN EEN UPDATE ZIE: https://github.com/ansible/awx/issues/5177
+- name: Manage Customers in AWX
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Create organization
+      tower_organization:
+        name: "{{ customer_name }}"
+        description: "{{ customer_desc }}"
+        state: present
+    - name: Add inventory
+      tower_inventory:
+        name: "{{ customer_name }}"
+        description: "{{ customer_desc }}"
+        organization: "{{ customer_name }}"
+        state: present
+    - name: Add project
+      tower_project:
+        name: "Klant - {{ customer_name }}"
+        description: "PROJECT for {{ customer_name }}"
+        organization: "{{ customer_name }}"
+        scm_credential: "GitLab MMol"
+        scm_type: git
+        scm_url: "http://gitlab.dhsnext.nl/klanten/{{ customer_name|lower }}.git"
+        scm_clean: true
+        scm_delete_on_update: true
+        scm_update_on_launch: true
+    - name: Add inventory source
+      tower_inventory_source:
+        name: "SYNC {{ customer_name }}"
+        description: "Inventory source for {{ customer_name }}"
+        inventory: "{{ customer_name }}"
+        credential: "GitLab MMol"
+        source_project: "Klant - {{ customer_name }}"
+        source_path: inventory
+        source: scm
+        update_on_launch: true
+        overwrite: true
+        overwrite_vars: true
+    - name: Send a notification
+      telegram:
+        token: '992106105:AAGdtks_CuonNG_LwVKWJ8TF7Iy9W9A0GBI'
+        chat_id: '-343904378'
+        msg_format: html
+        msg: "Customer {{ customer_name }} is ready for provisioning!"

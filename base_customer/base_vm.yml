@@ -1,0 +1,58 @@
+---
+- name: Deploy VM from Template
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Create customer VM folder
+      run_once: true
+      vcenter_folder:
+        hostname: "{{ dhs_vmware_host }}"
+        username: "{{ dhs_vmware_user }}"
+        password: "{{ dhs_vmware_password }}"
+        validate_certs: "{{ dhs_vmware_validate_certs }}"
+        datacenter_name: "{{ dhs_vmware_datacenter }}"
+        folder_name: "{{ customer_name }}"
+        folder_type: vm
+        parent_folder: Klanten
+        state: present
+      delegate_to: localhost
+
+    - name: Deploy VM from template
+      vmware_guest:
+        hostname: "{{ dhs_vmware_host }}"
+        username: "{{ dhs_vmware_user }}"
+        password: "{{ dhs_vmware_password }}"
+        validate_certs: "{{ dhs_vmware_validate_certs }}"
+        datacenter: "{{ dhs_vmware_datacenter }}"
+        cluster: "{{ dhs_vmware_cluster }}"
+        folder: "/Klanten/{{ customer_name }}"
+        name: '{{ inventory_hostname }}.{{ customer_domain }}'
+        state: poweredon
+        disk:
+          - size_gb: "{{ dhs_vm_disk | default('100') }}"
+            type: thin
+        networks:
+          - name: FlightCase Network
+            type: static
+            ip: '{{ ansible_host }}'
+            netmask: 255.255.255.0
+            gateway: 172.27.72.1
+            dns_servers:
+              - 172.27.72.4
+        hardware:
+          memory_mb: "{{ dhs_vm_memory | default('2048') }}"
+          num_cpus: "{{ dhs_vm_cpu | default('2') }}"
+          num_cpu_cores_per_socket: "{{ dhs_vm_core_per_sock | default('2') }}"
+        customization:
+          autologon: yes
+          password: P@ssword
+          dns_suffix: dhsnext.nl
+          dns_servers:
+            - 172.27.72.4
+          hostname: '{{ inventory_hostname }}'
+          orgname: '{{ customer_domain }}'
+        template: '{{ vm_template }}'
+        datastore: "{{ deploy_vsphere_datastore }}"
+        wait_for_customization: yes
+        wait_for_ip_address: yes
+      delegate_to: localhost

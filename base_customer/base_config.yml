@@ -1,0 +1,69 @@
+---
+- name: Configure VM's
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Ensure WinRM starts when the system has settled and is ready to work reliably
+      when: ansible_facts['os_family'] == "Windows"
+      win_service:
+        name: WinRM
+        start_mode: delayed
+    - name: Set timezone to W. Europe Standard Time
+      when: ansible_facts['os_family'] == "Windows"
+      win_timezone:
+        timezone: W. Europe Standard Time
+
+- name: Deploy base applications, repositories and settings
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Remove the default public source
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey_source:
+        name: chocolatey
+        state: absent
+    - name: Create HTTP source with credentials
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey_source:
+        name: DHS-CACHE
+        state: present
+        source: http://nexus.dhsnext.nl/repository/chocolatey/
+        source_username: user
+        source_password: jSamjSuqUrm5
+    - name: Install multiple Windows packages
+      when: ansible_facts['os_family'] == "Windows"
+      win_chocolatey:
+        name:
+        - git
+        - windirstat
+        - openssh
+        - powershell-core
+        state: present
+    - name: Enable Remote Desktop
+      when: ansible_facts['os_family'] == "Windows"
+      win_shell: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+    - name: Install the Kaseya Agent (Test nextGoud)
+      when: ansible_facts['os_family'] == "Windows"
+      vars:
+        ansible_become: yes
+        ansible_become_method: runas
+        ansible_become_user: "{{ dhs_become_windows_user }}"
+        ansible_become_password: "{{ dhs_become_windows_password }}"
+      win_package:
+        path: http://nexus.dhsnext.nl/repository/raw-dhs/KcsSetup.exe
+        product_id: 'KADHSNF983289444115196'
+        arguments: 
+          - /e
+          - /c
+          - /g=root.test_nextgoud
+          - /s
+    - name: Download Kaseya for Linux
+      when: ansible_facts['os_family'] == "Debian" or ansible_facts['os_family'] == "RedHat"
+      get_url:
+        url: http://nexus.dhsnext.nl/repository/raw-dhs/KcsSetup.sh
+        force: no
+        dest: /opt/KccAgent.sh
+        mode: '0755'
+    # - name: Run Kaseya for Linux Installer
+    #   when: ansible_facts['os_family'] == "Debian" or ansible_facts['os_family'] == "RedHat"
+    #   shell: /opt/KccAgent.sh
